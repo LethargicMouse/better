@@ -1,0 +1,10 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/better`
+Some(Ok(116))
+Some(Ok(114))
+Some(Ok(101))
+Some(Ok(109))
+Some(Ok(101))
+Some(Ok(110))
+Some(Ok(100))
+Some(Ok(27))
