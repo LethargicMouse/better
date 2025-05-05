@@ -1,9 +1,7 @@
 use std::{
-    collections::VecDeque,
     fmt,
     io::{self, Write},
     process,
-    str::Chars,
 };
 
 use termion::{
@@ -43,55 +41,10 @@ impl Frame {
     }
 }
 
-#[derive(Clone, Copy)]
-enum CommandExpr {
-    Command,
-}
-
-struct Command {
-    code: String,
-    expected: VecDeque<CommandExpr>,
-    args: fn(char) -> &'static [CommandExpr],
-}
-
-impl Command {
-    fn new(args: fn(char) -> &'static [CommandExpr]) -> Self {
-        Self {
-            code: String::new(),
-            expected: [CommandExpr::Command].into(),
-            args,
-        }
-    }
-
-    fn add(&mut self, c: char) {
-        match self
-            .expected
-            .pop_front()
-            .expect("command should not be ready")
-        {
-            CommandExpr::Command => {
-                self.code.push(c);
-                self.expected.extend((self.args)(c));
-            }
-        }
-    }
-
-    fn is_ready(&self) -> bool {
-        self.expected.is_empty()
-    }
-
-    fn reset(&mut self) {
-        self.code.clear();
-        self.expected.clear();
-        self.expected.push_back(CommandExpr::Command);
-    }
-}
-
 struct App {
     write: RawTerminal<io::Stdout>,
     read: Keys<AsyncReader>,
     frame: Frame,
-    command: Command,
 }
 
 impl App {
@@ -104,14 +57,7 @@ impl App {
             write: io::stdout().into_raw_mode()?,
             read: async_stdin().keys(),
             frame: Frame::begin(),
-            command: Command::new(Self::command_args),
         })
-    }
-
-    fn command_args(c: char) -> &'static [CommandExpr] {
-        match c {
-            _ => &[],
-        }
     }
 
     fn run(&mut self) -> Ress<()> {
@@ -145,33 +91,15 @@ impl App {
         if let Some(key) = self.read.next() {
             match key? {
                 Key::Esc => self.frame = Frame::End,
-                Key::Char(c) => self.command.add(c),
                 _ => {}
             }
-        }
-        if self.command.is_ready() {
-            if self.frame_active
-            self.process(self.command.code.chars());
-            self.command.reset();
         }
         Ok(())
     }
 
     fn draw(&mut self) -> Ress<()> {
-        self.draw_command()?;
         self.write.flush()?;
         Ok(())
-    }
-
-    fn draw_command(&mut self) -> Ress<()> {
-        write!(self.write, "{}{}", cursor::Goto(1, 1), self.command.code)?;
-        Ok(())
-    }
-
-    fn process(&self, mut command: Chars) {
-        match command.next() {
-            _ => {}
-        }
     }
 }
 
