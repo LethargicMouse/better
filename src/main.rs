@@ -1,11 +1,14 @@
 use std::{
     fmt,
+    fs::DirEntry,
     io::{self, Write},
-    mem, process,
+    mem,
+    path::Path,
+    process,
 };
 
 use termion::{
-    AsyncReader, async_stdin, clear, cursor,
+    AsyncReader, async_stdin, clear, color, cursor,
     event::Key,
     input::{Keys, TermRead},
     raw::{IntoRawMode, RawTerminal},
@@ -26,19 +29,76 @@ impl Intro {
         Self {}
     }
 
-    fn manage_key(self, key: Key) -> Frame {
+    fn manage_key(self, key: Key) -> Ress<Frame> {
         match key {
-            Key::Esc => return Frame::End,
+            Key::Esc => return Ok(Frame::End),
+            Key::Char('f') => return Ok(Frame::Dir(Dir::new(".")?)),
             _ => {}
         }
 
-        Frame::Intro(self)
+        Ok(Frame::Intro(self))
+    }
+
+    fn draw(&self, out: &mut impl Write) -> Ress<()> {
+        let (w, h) = terminal_size()?;
+        write!(
+            out,
+            "{}BetTer{}Better  Terminal",
+            cursor::Goto(w / 2 - 3, h / 3),
+            cursor::Goto(w / 2 - 7, h / 3 + 2)
+        )?;
+        Ok(())
+    }
+}
+
+struct Dir {
+    entries: Vec<DirEntry>,
+    cursor: usize,
+}
+
+impl Dir {
+    fn new(path: impl AsRef<Path>) -> Ress<Self> {
+        let entries = std::fs::read_dir(path)?.collect::<Result<_, _>>()?;
+        Ok(Self { entries, cursor: 0 })
+    }
+
+    fn manage_key(mut self, key: Key) -> Ress<Frame> {
+        match key {
+            Key::Esc => return Ok(Frame::Intro(Intro::new())),
+            Key::Char('j') => self.cursor = (self.cursor + 1) % self.entries.len(),
+            Key::Char('k') => {
+                self.cursor = (self.cursor + self.entries.len() - 1) % self.entries.len()
+            }
+            Key::Char('\n') => return Ok(Frame::Dir(Dir::new(self.entries[self.cursor].path())?)),
+            _ => {}
+        }
+        Ok(Frame::Dir(self))
+    }
+
+    fn draw(&self, out: &mut impl Write) -> Ress<()> {
+        write!(out, "{}", cursor::Goto(1, 2))?;
+        for (i, entry) in self.entries.iter().enumerate() {
+            if i == self.cursor {
+                write!(out, "{}", color::Fg(color::LightGreen))?;
+            }
+            write!(
+                out,
+                "   {}{}\n\r",
+                entry.path().display(),
+                if entry.path().is_dir() { "/" } else { "" }
+            )?;
+            if i == self.cursor {
+                write!(out, "{}", color::Fg(color::Reset))?;
+            }
+        }
+        Ok(())
     }
 }
 
 enum Frame {
     End,
     Intro(Intro),
+    Dir(Dir),
 }
 
 impl Frame {
@@ -51,19 +111,18 @@ impl Frame {
     }
 
     fn draw(&self, out: &mut impl Write) -> Ress<()> {
-        let (w, h) = terminal_size()?;
-        write!(
-            out,
-            "{}BetTer{}Better  Terminal",
-            cursor::Goto(w / 2 - 3, h / 3), cursor::Goto(w / 2 - 7, h / 3 + 2)
-        )?;
-        Ok(())
+        match self {
+            Frame::End => Ok(()),
+            Frame::Intro(intro) => intro.draw(out),
+            Frame::Dir(dir) => dir.draw(out),
+        }
     }
 
-    fn manage_key(self, key: Key) -> Self {
+    fn manage_key(self, key: Key) -> Ress<Self> {
         match self {
-            Frame::End => self,
+            Frame::End => Ok(self),
             Frame::Intro(intro) => intro.manage_key(key),
+            Frame::Dir(dir) => Ok(dir.manage_key(key)?),
         }
     }
 }
@@ -117,7 +176,8 @@ impl App {
     fn update(&mut self) -> Ress<()> {
         if let Some(key) = self.read.next() {
             let frame = mem::replace(&mut self.frame, Frame::End);
-            self.frame = frame.manage_key(key?);
+            self.frame = frame.manage_key(key?)?;
+            write!(self.write, "{}", clear::All)?;
         }
         Ok(())
     }
