@@ -131,6 +131,7 @@ struct App {
     write: RawTerminal<io::Stdout>,
     read: Keys<AsyncReader>,
     frame: Frame,
+    timer: u16,
 }
 
 impl App {
@@ -143,6 +144,7 @@ impl App {
             write: io::stdout().into_raw_mode()?,
             read: async_stdin().keys(),
             frame: Frame::begin(),
+            timer: 1,
         })
     }
 
@@ -177,7 +179,11 @@ impl App {
         if let Some(key) = self.read.next() {
             let frame = mem::replace(&mut self.frame, Frame::End);
             self.frame = frame.manage_key(key?)?;
+        }
+        self.timer -= 1;
+        if self.timer == 0 {
             write!(self.write, "{}", clear::All)?;
+            self.timer = 200;
         }
         Ok(())
     }
