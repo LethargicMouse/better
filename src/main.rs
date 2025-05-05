@@ -1,7 +1,7 @@
 use std::{
     fmt,
     io::{self, Write},
-    process,
+    mem, process,
 };
 
 use termion::{
@@ -9,6 +9,7 @@ use termion::{
     event::Key,
     input::{Keys, TermRead},
     raw::{IntoRawMode, RawTerminal},
+    terminal_size,
 };
 
 fn main() {
@@ -24,6 +25,15 @@ impl Intro {
     fn new() -> Self {
         Self {}
     }
+
+    fn manage_key(self, key: Key) -> Frame {
+        match key {
+            Key::Esc => return Frame::End,
+            _ => {}
+        }
+
+        Frame::Intro(self)
+    }
 }
 
 enum Frame {
@@ -38,6 +48,23 @@ impl Frame {
 
     fn is_end(&self) -> bool {
         matches!(self, Self::End)
+    }
+
+    fn draw(&self, out: &mut impl Write) -> Ress<()> {
+        let (w, h) = terminal_size()?;
+        write!(
+            out,
+            "{}BetTer{}Better  Terminal",
+            cursor::Goto(w / 2 - 3, h / 3), cursor::Goto(w / 2 - 7, h / 3 + 2)
+        )?;
+        Ok(())
+    }
+
+    fn manage_key(self, key: Key) -> Self {
+        match self {
+            Frame::End => self,
+            Frame::Intro(intro) => intro.manage_key(key),
+        }
     }
 }
 
@@ -89,15 +116,14 @@ impl App {
 
     fn update(&mut self) -> Ress<()> {
         if let Some(key) = self.read.next() {
-            match key? {
-                Key::Esc => self.frame = Frame::End,
-                _ => {}
-            }
+            let frame = mem::replace(&mut self.frame, Frame::End);
+            self.frame = frame.manage_key(key?);
         }
         Ok(())
     }
 
     fn draw(&mut self) -> Ress<()> {
+        self.frame.draw(&mut self.write)?;
         self.write.flush()?;
         Ok(())
     }
